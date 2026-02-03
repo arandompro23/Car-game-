@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <title>Night Drive Pro Max</title>
+    <style>
+        :root { --safe-top: env(safe-area-inset-top); --safe-bottom: env(safe-area-inset-bottom); }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #050510; font-family: sans-serif; touch-action: none; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        
+        #ui-layer { 
+            position: absolute; top: calc(var(--safe-top) + 15px); left: 30px; right: 30px;
+            display: flex; justify-content: space-between; pointer-events: none; z-index: 10;
+        }
+        .stats { color: #fff; text-shadow: 0 0 10px #00f2fe; font-size: 22px; font-weight: 800; }
+        
+        .controls { 
+            position: absolute; bottom: calc(var(--safe-bottom) + 30px); width: 100%; display: flex; 
+            justify-content: space-around; pointer-events: none; z-index: 10;
+        }
+        .btn { 
+            width: 90px; height: 90px; border-radius: 50%; background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.4); color: white; font-weight: bold;
+            display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);
+            pointer-events: auto; transition: transform 0.1s; -webkit-user-select: none;
+        }
+        .btn:active { transform: scale(0.9); background: rgba(0,242,254,0.3); }
+
+        #overlay { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            backdrop-filter: blur(20px); color: white; text-align: center; z-index: 20;
+        }
+        #overlay h1 { font-size: 54px; margin: 0; color: #ff0055; text-shadow: 0 0 20px #ff0055; }
+        .score-box { margin: 25px; font-size: 26px; }
+    </style>
+</head>
+<body>
+    <div id="ui-layer">
+        <div class="stats" id="scoreDisplay">SCORE: 0</div>
+        <div class="stats" id="highScoreDisplay">BEST: 0</div>
+    </div>
+    
+    <div class="controls">
+        <div class="btn" id="jumpBtn">JUMP</div>
+        <div class="btn" id="boostBtn">BOOST</div>
+    </div>
+
+    <div id="overlay">
+        <h1 id="statusText">NIGHT DRIVE</h1>
+        <div class="score-box">
+            <div id="finalScore">READY?</div>
+            <div id="finalBest"></div>
+        </div>
+        <button class="btn" style="border-radius: 15px; width: 200px;" onclick="startGame()">START ENGINE</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let width, height, score = 0, highScore = localStorage.getItem('highScore') || 0;
+        let isGameOver = true, gameSpeed = 7, frame = 0, isBoosting = false;
+
+        const car = { x: 100, y: 0, w: 100, h: 40, v: 0, g: 0.7, jumpPower: -15, groundY: 0, wheelsAngle: 0, inAir: false };
+        let obstacles = [], stars = [], particles = [], clouds = [];
+
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let audioCtx, engineOsc, engineGain;
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new AudioCtx();
+            engineOsc = audioCtx.createOscillator();
+            engineGain = audioCtx.createGain();
+            engineOsc.type = 'sawtooth';
+            engineOsc.frequency.setValueAtTime(50, audioCtx.currentTime);
+            engineGain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+            engineOsc.connect(engineGain);
+            engineGain.connect(audioCtx.destination);
+            engineOsc.start();
+        }
+
+        function playSound(freq, type, duration, vol, slide = 10) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(slide, audioCtx.currentTime + duration);
+            g.gain.setValueAtTime(vol, audioCtx.currentTime);
+            g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function resize() {
+            // Fix for high-DPI screens like iPhone 16 Pro Max
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width * window.devicePixelRatio;
+            canvas.height = height * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            
+            car.groundY = height * 0.75; // Pull ground up so it's visible
+            car.y = car.groundY - car.h;
+            
+            stars = [];
+            for(let i=0; i<100; i++) stars.push({x: Math.random()*width, y: Math.random()*height*0.6, s: Math.random()*2.5});
+            
+            clouds = [];
+            for(let i=0; i<5; i++) clouds.push({x: Math.random()*width, y: 50+Math.random()*100, w: 100+Math.random()*100, s: 0.2+Math.random()*0.5});
+        }
+
+        function createParticles(x, y, color, count, vxS = 5, vyS = 5) {
+            for(let i=0; i<count; i++) {
+                particles.push({ x, y, vx: (Math.random()-0.5)*vxS, vy: (Math.random()-0.5)*vyS, life: 1, color });
+            }
+        }
+
+        function startGame() {
+            initAudio();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            score = 0; frame = 0; obstacles = []; particles = [];
+            isGameOver = false;
+            document.getElementById('overlay').style.display = 'none';
+        }
+
+        function update() {
+            if (isGameOver) return;
+            frame++;
+            score = Math.floor(frame / 10);
+            
+            let pitch = 50 + (gameSpeed * 6);
+            if (isBoosting) pitch += 80;
+            if (engineOsc) engineOsc.frequency.setTargetAtTime(pitch, audioCtx.currentTime, 0.1);
+
+            car.v += car.g;
+            car.y += car.v;
+
+            if (car.y + car.h >= car.groundY) {
+                if (car.inAir) {
+                    playSound(120, 'sine', 0.2, 0.15); 
+                    createParticles(car.x + 20, car.groundY, 'rgba(255,255,255,0.4)', 15);
+                }
+                car.y = car.groundY - car.h;
+                car.v = 0;
+                car.inAir = false;
+            } else { car.inAir = true; }
+
+            car.wheelsAngle += gameSpeed * 0.08;
+
+            if (frame % 100 === 0) {
+                obstacles.push({ x: width, w: 50 + Math.random()*30, h: 45 + Math.random()*40 });
+            }
+
+            obstacles.forEach((o, i) => {
+                o.x -= gameSpeed;
+                if (car.x + 10 < o.x + o.w && car.x + car.w - 10 > o.x && car.y + car.h > car.groundY - o.h) {
+                    crash();
+                }
+                if (o.x + o.w < 0) obstacles.splice(i, 1);
+            });
+
+            clouds.forEach(c => {
+                c.x -= c.s;
+                if(c.x + c.w < 0) c.x = width;
+            });
+
+            particles.forEach((p, i) => {
+                p.x += p.vx; p.y += p.vy; p.life -= 0.02;
+                if(p.life <= 0) particles.splice(i, 1);
+            });
+
+            if (isBoosting) createParticles(car.x, car.y + car.h/2, '#00f2fe', 2, -10, 2);
+
+            document.getElementById('scoreDisplay').innerText = `SCORE: ${score}`;
+        }
+
+        function draw() {
+            let sky = ctx.createLinearGradient(0,0,0,height);
+            sky.addColorStop(0, '#020208'); sky.addColorStop(1, '#101025');
+            ctx.fillStyle = sky; ctx.fillRect(0,0,width,height);
+
+            ctx.fillStyle = "white";
+            stars.forEach(s => ctx.fillRect(s.x, s.y, s.s, s.s));
+
+            ctx.fillStyle = "rgba(255,255,255,0.05)";
+            clouds.forEach(c => {
+                ctx.beginPath(); ctx.ellipse(c.x, c.y, c.w/2, 20, 0, 0, Math.PI*2); ctx.fill();
+            });
+
+            // Road & Terrain
+            ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, car.groundY, width, height - car.groundY);
+            ctx.strokeStyle = '#222'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(0, car.groundY); ctx.lineTo(width, car.groundY); ctx.stroke();
+            
+            // Lane lines
+            ctx.setLineDash([40, 60]); ctx.lineDashOffset = (frame * gameSpeed) % 100;
+            ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+            ctx.beginPath(); ctx.moveTo(0, car.groundY + 40); ctx.lineTo(width, car.groundY + 40); ctx.stroke();
+            ctx.setLineDash([]);
+
+            particles.forEach(p => {
+                ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
+                ctx.fillRect(p.x, p.y, 4, 4);
+            });
+            ctx.globalAlpha = 1;
+
+            obstacles.forEach(o => {
+                ctx.fillStyle = '#333'; ctx.fillRect(o.x, car.groundY - o.h, o.w, o.h);
+                ctx.strokeStyle = '#ff0055'; ctx.lineWidth = 2; ctx.strokeRect(o.x, car.groundY - o.h, o.w, o.h);
+                // Detail on rock
+                ctx.fillStyle = '#222'; ctx.fillRect(o.x + 5, car.groundY - o.h + 5, 10, 10);
+            });
+
+            // Draw Car
+            ctx.save();
+            ctx.translate(car.x, car.y);
+            ctx.fillStyle = '#111'; ctx.fillRect(0, 5, car.w, car.h-10); // Chassis
+            ctx.fillStyle = '#1a1a1a'; ctx.fillRect(20, -10, 50, 20); // Top
+            
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = '#ff0000'; ctx.shadowColor = '#ff0000'; ctx.fillRect(0, 10, 6, 12); // Tail
+            ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.fillRect(car.w-6, 10, 6, 12); // Head
+            ctx.shadowBlur = 0;
+
+            const drawRim = (rx) => {
+                ctx.save(); ctx.translate(rx, car.h-5); ctx.rotate(car.wheelsAngle);
+                ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(0,0,13,0,Math.PI*2); ctx.fill();
+                ctx.strokeStyle = '#555'; ctx.beginPath(); ctx.moveTo(-9,0); ctx.lineTo(9,0); ctx.stroke();
+                ctx.restore();
+            };
+            drawRim(25); drawRim(car.w-25);
+            ctx.restore();
+
+            update();
+            requestAnimationFrame(draw);
+        }
+
+        function crash() {
+            isGameOver = true;
+            playSound(80, 'sawtooth', 0.6, 0.3, 20);
+            if (engineGain) engineGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+            if (score > highScore) { highScore = score; localStorage.setItem('highScore', highScore); }
+            document.getElementById('statusText').innerText = "CRASHED!";
+            document.getElementById('finalScore').innerText = `Score: ${score}`;
+            document.getElementById('finalBest').innerText = `Best: ${highScore}`;
+            document.getElementById('overlay').style.display = 'flex';
+        }
+
+        function jump() {
+            if (!car.inAir) {
+                car.v = car.jumpPower;
+                playSound(350, 'sine', 0.2, 0.08, 100);
+            }
+        }
+
+        window.addEventListener('touchstart', (e) => { 
+            if(e.target.id === 'boostBtn') {
+                isBoosting = true; gameSpeed = 15;
+                if(car.inAir) playSound(500, 'sine', 0.4, 0.1, 200);
+            } else if (e.target.id === 'jumpBtn') {
+                jump();
+            } else if (e.target.id !== 'overlay' && !isGameOver) {
+                jump();
+            }
+        });
+        window.addEventListener('touchend', (e) => {
+            if(e.target.id === 'boostBtn') { isBoosting = false; gameSpeed = 7; }
+        });
+
+        window.addEventListener('resize', resize);
+        document.getElementById('highScoreDisplay').innerText = `BEST: ${highScore}`;
+        resize(); draw();
+    </script>
+</body>
+</html>
