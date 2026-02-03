@@ -1,0 +1,9 @@
+{
+  "name": "Boulders & Clouds",
+  "short_name": "Boulders",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#1a2a6c",
+  "theme_color": "#4facfe",
+  "icons": [{ "src": "icon.png", "sizes": "192x192", "type": "image/png" }]
+}
