@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <title>Boulders & Clouds</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background: #1a2a6c; /* Fallback */
+            touch-action: none; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas { display: block; }
+
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom) 20px;
+            box-sizing: border-box;
+            display: flex; flex-direction: column; justify-content: space-between;
+        }
+        .hud-text {
+            color: white; font-size: 28px; font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        .btn {
+            pointer-events: auto; background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(5px); color: white; border: 2px solid white;
+            padding: 10px 20px; font-size: 18px; border-radius: 12px; cursor: pointer;
+        }
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); display: flex; flex-direction: column;
+            align-items: center; justify-content: center; color: white;
+            display: none; pointer-events: auto;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui-layer">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px;">
+            <div id="score" class="hud-text">Score: 0</div>
+            <button class="btn" onclick="togglePause(event)">Pause</button>
+        </div>
+    </div>
+
+    <div id="overlay">
+        <h1 id="status-text">GAME OVER</h1>
+        <p id="final-score"></p>
+        <button class="btn" onclick="resetGame()">Try Again</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const overlay = document.getElementById('overlay');
+
+        // Game Constants
+        let width, height;
+        let isPaused = false;
+        let isGameOver = false;
+        let score = 0;
+
+        const player = {
+            x: 80, y: 0, radius: 18,
+            velocity: 0, gravity: 0.6, lift: -10,
+            color: '#FFD700'
+        };
+
+        let boulders = [];
+        let clouds = [];
+        const boulderSpeed = 5;
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width * window.devicePixelRatio;
+            canvas.height = height * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            player.y = height / 2;
+        }
+
+        // Object Creation
+        function spawnBoulder() {
+            const gap = 180;
+            const minHeight = 50;
+            const topHeight = Math.random() * (height - gap - (minHeight * 2)) + minHeight;
+            boulders.push({
+                x: width,
+                top: topHeight,
+                bottom: height - topHeight - gap,
+                width: 60,
+                passed: false
+            });
+        }
+
+        function spawnCloud() {
+            clouds.push({
+                x: width + 50,
+                y: Math.random() * (height * 0.6),
+                size: Math.random() * 60 + 40,
+                speed: Math.random() * 1 + 0.5
+            });
+        }
+
+        // Logic Functions
+        function jump() {
+            if (isPaused || isGameOver) return;
+            player.velocity = player.lift;
+        }
+
+        function togglePause(e) {
+            e.stopPropagation();
+            isPaused = !isPaused;
+            document.getElementById('status-text').innerText = "PAUSED";
+            overlay.style.display = isPaused ? 'flex' : 'none';
+        }
+
+        function resetGame() {
+            score = 0;
+            scoreEl.innerText = `Score: ${score}`;
+            boulders = [];
+            clouds = [];
+            player.y = height / 2;
+            player.velocity = 0;
+            isGameOver = false;
+            isPaused = false;
+            overlay.style.display = 'none';
+        }
+
+        // Graphics Helpers
+        function drawSky() {
+            const grad = ctx.createLinearGradient(0, 0, 0, height);
+            grad.addColorStop(0, '#4facfe'); // Deep sky blue
+            grad.addColorStop(1, '#00f2fe'); // Light cyan
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+        }
+
+        function drawPlayer() {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = player.color;
+            ctx.fillStyle = player.color;
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0; // Reset shadow
+        }
+
+        // Main Loop
+        function update() {
+            if (isPaused || isGameOver) return;
+
+            // Player Physics
+            player.velocity += player.gravity;
+            player.y += player.velocity;
+
+            // Boundaries
+            if (player.y + player.radius > height || player.y - player.radius < 0) {
+                endGame();
+            }
+
+            // Cloud logic
+            if (Math.random() < 0.01) spawnCloud();
+            clouds.forEach((c, i) => {
+                c.x -= c.speed;
+                if (c.x < -100) clouds.splice(i, 1);
+            });
+
+            // Boulder logic
+            if (boulders.length === 0 || boulders[boulders.length - 1].x < width - 250) {
+                spawnBoulder();
+            }
+
+            boulders.forEach((b, i) => {
+                b.x -= boulderSpeed;
+
+                // Collision Detection
+                if (
+                    player.x + player.radius > b.x && 
+                    player.x - player.radius < b.x + b.width
+                ) {
+                    if (player.y - player.radius < b.top || player.y + player.radius > height - b.bottom) {
+                        endGame();
+                    }
+                }
+
+                // Scoring
+                if (!b.passed && b.x + b.width < player.x) {
+                    score++;
+                    scoreEl.innerText = `Score: ${score}`;
+                    b.passed = true;
+                }
+
+                if (b.x < -b.width) boulders.splice(i, 1);
+            });
+        }
+
+        function draw() {
+            drawSky();
+
+            // Draw Clouds
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            clouds.forEach(c => {
+                ctx.beginPath();
+                ctx.arc(c.x, c.y, c.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Boulders
+            ctx.fillStyle = '#555';
+            boulders.forEach(b => {
+                // Top Boulder
+                ctx.fillRect(b.x, 0, b.width, b.top);
+                // Bottom Boulder
+                ctx.fillRect(b.x, height - b.bottom, b.width, b.bottom);
+                // Adding a little rim light for "Graphics"
+                ctx.fillStyle = '#777';
+                ctx.fillRect(b.x, b.top - 5, b.width, 5);
+                ctx.fillRect(b.x, height - b.bottom, b.width, 5);
+                ctx.fillStyle = '#555';
+            });
+
+            drawPlayer();
+            update();
+            requestAnimationFrame(draw);
+        }
+
+        function endGame() {
+            isGameOver = true;
+            document.getElementById('status-text').innerText = "GAME OVER";
+            document.getElementById('final-score').innerText = `Final Score: ${score}`;
+            overlay.style.display = 'flex';
+        }
+
+        // Events
+        window.addEventListener('resize', resize);
+        window.addEventListener('keydown', (e) => { if(e.code === 'Space') jump(); });
+        window.addEventListener('touchstart', (e) => {
+            if (e.target.tagName !== 'BUTTON') jump();
+        });
+        window.addEventListener('mousedown', (e) => {
+             if (e.target.tagName !== 'BUTTON') jump();
+        });
+
+        resize();
+        draw();
+    </script>
+</body>
+</html>
