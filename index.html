@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <title>Car Game</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #4facfe; touch-action: none; }
+        canvas { display: block; }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; font-family: sans-serif; font-size: 24px; font-weight: bold; pointer-events: none; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; flex-direction: column; align-items: center; justify-content: center; color: white; font-family: sans-serif; }
+        .btn { padding: 15px 30px; font-size: 20px; background: #ff4b2b; color: white; border: none; border-radius: 10px; cursor: pointer; margin-top: 20px; pointer-events: auto; }
+    </style>
+</head>
+<body>
+    <div id="ui">Score: 0</div>
+    <div id="overlay">
+        <h1 id="msg">GAME OVER</h1>
+        <button class="btn" onclick="resetGame()">Restart</button>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('ui');
+        const overlay = document.getElementById('overlay');
+
+        // LOAD YOUR IMAGES
+        const truckImg = new Image();
+        truckImg.src = 'icon.png'; // This uses the truck photo you uploaded
+
+        let width, height, score = 0, isGameOver = true; // Start true to prevent instant death
+        let boulders = [];
+        const player = { x: 50, y: 0, w: 60, h: 40, v: 0, g: 0.4, jump: -8 };
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            if (isGameOver) overlay.style.display = 'flex';
+        }
+
+        function resetGame() {
+            score = 0;
+            boulders = [];
+            player.y = height / 3;
+            player.v = 0;
+            isGameOver = false;
+            overlay.style.display = 'none';
+        }
+
+        function spawnBoulder() {
+            const gap = 200;
+            const minH = 50;
+            const topH = Math.random() * (height - gap - (minH * 2)) + minH;
+            boulders.push({ x: width, top: topH, bottom: height - topH - gap, w: 50, passed: false });
+        }
+
+        function update() {
+            if (isGameOver) return;
+
+            player.v += player.g;
+            player.y += player.v;
+
+            // Floor/Ceiling collision
+            if (player.y + player.h > height || player.y < 0) isGameOver = true;
+
+            if (boulders.length === 0 || boulders[boulders.length - 1].x < width - 250) spawnBoulder();
+
+            boulders.forEach((b, i) => {
+                b.x -= 4;
+                // Collision logic
+                if (player.x < b.x + b.w && player.x + player.w > b.x) {
+                    if (player.y < b.top || player.y + player.h > height - b.bottom) {
+                        isGameOver = true;
+                    }
+                }
+                if (!b.passed && b.x < player.x) {
+                    score++;
+                    scoreEl.innerText = `Score: ${score}`;
+                    b.passed = true;
+                }
+                if (b.x + b.w < 0) boulders.splice(i, 1);
+            });
+
+            if (isGameOver) {
+                document.getElementById('msg').innerText = "FINAL SCORE: " + score;
+                overlay.style.display = 'flex';
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+            
+            // Draw Player (Truck)
+            ctx.drawImage(truckImg, player.x, player.y, player.w, player.h);
+
+            // Draw Boulders
+            ctx.fillStyle = '#6d4c41';
+            boulders.forEach(b => {
+                ctx.fillRect(b.x, 0, b.w, b.top); // Top rock
+                ctx.fillRect(b.x, height - b.bottom, b.w, b.bottom); // Bottom rock
+            });
+
+            update();
+            requestAnimationFrame(draw);
+        }
+
+        window.addEventListener('touchstart', (e) => {
+            if (!isGameOver) player.v = player.jump;
+        });
+
+        window.addEventListener('resize', resize);
+        resize();
+        draw();
+    </script>
+</body>
+</html>
