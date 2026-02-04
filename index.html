@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <title>Night Drive Ultra: Paint Shop</title>
+    <style>
+        :root { --squircle: 28px; --glass: linear-gradient(145deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.03) 100%); }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; -webkit-user-select: none; user-select: none; font-family: "SF Pro Display", -apple-system, sans-serif; }
+        #game-container { width: 100vw; height: 100vh; position: relative; display: flex; align-items: center; justify-content: center; }
+        @media screen and (orientation: portrait) { #stage { width: 100vh; height: 100vw; transform: rotate(90deg); transform-origin: center; } }
+        @media screen and (orientation: landscape) { #stage { width: 100vw; height: 100vh; } }
+        #stage { position: relative; overflow: hidden; background: #020205; }
+        canvas { width: 100%; height: 100%; display: block; }
+        #ui-top { position: absolute; top: 40px; left: 50px; right: 50px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 10; color: white; }
+        .stats { font-weight: 900; font-size: 28px; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+        .overlay-screen { position: absolute; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; z-index: 100; transition: opacity 0.4s; }
+        .btn { background: var(--glass); border: 1px solid rgba(255,255,255,0.25); border-radius: var(--squircle); color: white; font-weight: 600; display: flex; align-items: center; justify-content: center; transition: all 0.2s cubic-bezier(0.15, 0, 0.15, 1); pointer-events: auto; backdrop-filter: blur(15px); text-align: center; }
+        .btn:active { transform: scale(0.9) translateY(4px); }
+        .menu-btn { width: 240px; height: 60px; margin: 10px; font-size: 16px; text-transform: uppercase; letter-spacing: 2px; }
+        
+        /* Garage Layout */
+        .car-grid { display: flex; gap: 15px; margin-bottom: 20px; }
+        .car-card { width: 150px; background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 15px; text-align: center; pointer-events: auto; }
+        .car-card.active { border-color: #007aff; background: rgba(0,122,255,0.2); }
+        .car-thumb { width: 100%; height: 70px; margin-bottom: 5px; }
+
+        /* Color Picker Grid */
+        #palette-container { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; padding: 15px; background: rgba(0,0,0,0.3); border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px; pointer-events: auto; }
+        .color-swatch { width: 35px; height: 35px; border-radius: 4px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); transition: transform 0.1s; }
+        .color-swatch:active { transform: scale(0.85); }
+
+        .control-btns { position: absolute; bottom: 8%; width: 100%; display: flex; justify-content: space-between; padding: 0 70px; box-sizing: border-box; pointer-events: none; }
+        .game-btn { width: 125px; height: 125px; border-radius: 40px; font-size: 16px; font-weight: 800; border-width: 2px; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="stage">
+            <div id="ui-top">
+                <div class="stats" id="scoreDisplay">0000</div>
+                <div class="btn" style="width:60px; height:60px; border-radius:20px;" onclick="togglePause()">II</div>
+            </div>
+            
+            <div id="startScreen" class="overlay-screen">
+                <h1 style="font-size: 48px; font-weight: 900; margin-bottom: 30px;">NIGHT DRIVE</h1>
+                <div id="continueBtn" class="btn menu-btn hidden" onclick="togglePause()">CONTINUE</div>
+                <div id="startBtn" class="btn menu-btn" style="background:rgba(0,122,255,0.4)" onclick="startGame()">START ENGINE</div>
+                <div class="btn menu-btn" onclick="openSub('garageMenu')">THE GARAGE</div>
+                <div class="btn menu-btn" onclick="openSub('settingsMenu')">SETTINGS</div>
+            </div>
+
+            <div id="garageMenu" class="overlay-screen hidden">
+                <h2>THE GARAGE</h2>
+                <div class="car-grid">
+                    <div class="car-card active" id="card-hatch" onclick="selectCar('hatch')"><canvas class="car-thumb" id="thumb-hatch"></canvas><b>HATCH</b></div>
+                    <div class="car-card" id="card-sport" onclick="selectCar('sport')"><canvas class="car-thumb" id="thumb-sport"></canvas><b>SPORT</b></div>
+                    <div class="car-card" id="card-suv" onclick="selectCar('suv')"><canvas class="car-thumb" id="thumb-suv"></canvas><b>SUV</b></div>
+                </div>
+                <div class="btn menu-btn" style="background: rgba(255,255,255,0.1);" onclick="openSub('paintMenu')">PAINT SHOP</div>
+                <div class="btn menu-btn" onclick="openSub('startScreen')">DONE</div>
+            </div>
+
+            <div id="paintMenu" class="overlay-screen hidden">
+                <h2>PAINT SHOP</h2>
+                <canvas id="paintPreview" width="200" height="100" style="margin-bottom: 10px;"></canvas>
+                <div id="palette-container"></div>
+                <div class="btn menu-btn" onclick="openSub('garageMenu')">BACK</div>
+            </div>
+
+            <div id="settingsMenu" class="overlay-screen hidden">
+                <h2>WEATHER</h2>
+                <select id="weatherSelect" style="width:220px; padding:12px; background:#111; color:white; border-radius:10px; border:1px solid #333;">
+                    <option value="clear">CLEAR NIGHT</option>
+                    <option value="rain">HEAVY RAIN</option>
+                    <option value="snow">BLIZZARD</option>
+                </select>
+                <div class="btn menu-btn" style="margin-top:30px" onclick="openSub('startScreen')">SAVE</div>
+            </div>
+
+            <div id="crashScreen" class="overlay-screen hidden">
+                <h1 style="color: #ff3b30; font-size: 60px; font-weight: 900;">CRASHED</h1>
+                <p id="finalScore" style="font-size: 24px;"></p>
+                <div class="btn menu-btn" style="background: #007aff;" onclick="startGame()">RETRY</div>
+                <div class="btn menu-btn" onclick="openSub('startScreen')">GARAGE</div>
+            </div>
+
+            <div class="control-btns">
+                <div class="btn game-btn" id="boostBtn">BOOST</div>
+                <div class="btn game-btn" id="jumpBtn">JUMP</div>
+            </div>
+            <canvas id="g"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('g'), ctx = canvas.getContext('2d');
+        let w, h, score = 0, over = true, paused = false, frame = 0, speed = 7;
+        let carColor = '#007aff', carType = 'hatch', wrecks = [], particles = [], flames = [];
+        let snowLvl = 0, rainLvl = 0, lightning = 0;
+
+        const player = { x: 280, y: 0, w: 94, h: 38, v: 0, g: 0.55, jump: -13.5, ground: 0, wheelA: 0 };
+
+        function drawVehicle(c, x, y, type, color, wheelA, isWreck = false) {
+            c.save(); c.translate(x, y);
+            const baseColor = isWreck ? "#1a1a1a" : color;
+            const glassColor = isWreck ? "#050505" : "rgba(0,0,0,0.8)";
+            
+            c.fillStyle = baseColor;
+            if(type === 'hatch') {
+                c.beginPath(); c.roundRect(0, 8, 94, 24, 10); c.fill();
+                c.fillStyle = glassColor; c.beginPath(); c.roundRect(22, 0, 50, 18, [15, 15, 2, 2]); c.fill();
+            } else if(type === 'sport') {
+                c.beginPath(); c.roundRect(0, 12, 105, 18, 5); c.fill();
+                c.fillStyle = glassColor; c.beginPath(); c.roundRect(25, 5, 45, 12, [20, 20, 2, 2]); c.fill();
+                c.fillStyle = baseColor; c.fillRect(2, 6, 8, 8);
+            } else if(type === 'suv') {
+                c.beginPath(); c.roundRect(0, 5, 96, 30, 4); c.fill();
+                c.fillStyle = glassColor; c.beginPath(); c.roundRect(10, -10, 65, 25, 5); c.fill();
+                if(!isWreck) { c.fillStyle="#333"; c.fillRect(15, -12, 50, 3); }
+            }
+
+            if(!isWreck) {
+                c.shadowBlur = 15; c.fillStyle = '#fff'; c.shadowColor = '#fff'; c.fillRect(type==='sport'?100:90, 15, 4, 10);
+                c.fillStyle = '#f33'; c.shadowColor = '#f33'; c.fillRect(0, 15, 4, 10);
+                c.shadowBlur = 0;
+            }
+
+            const drawWheel = (wx) => {
+                c.save(); c.translate(wx, (type==='suv'?34:30)); c.rotate(wheelA);
+                c.fillStyle = '#080808'; c.beginPath(); c.arc(0,0,15,0,Math.PI*2); c.fill();
+                c.strokeStyle = isWreck ? '#222' : '#444'; c.lineWidth = 3;
+                for(let i=0; i<5; i++){ c.rotate(Math.PI*2/5); c.beginPath(); c.moveTo(0,0); c.lineTo(12,0); ctx.stroke(); }
+                c.restore();
+            };
+            drawWheel(22); if(!(isWreck && type === 'sport')) drawWheel(type==='sport'?85:72);
+            c.restore();
+        }
+
+        function createPalette() {
+            const container = document.getElementById('palette-container');
+            // Grayscale row
+            for(let i=0; i<12; i++) {
+                const l = 100 - (i * 9);
+                addSwatch(`hsl(0, 0%, ${l}%)`);
+            }
+            // Colors from image: Rainbow hues, then rows of different brightness
+            const hues = [200, 220, 240, 280, 320, 0, 20, 40, 60, 80, 120, 160];
+            const lightness = [20, 30, 40, 50, 60, 70, 80, 90];
+            lightness.forEach(l => {
+                hues.forEach(h => {
+                    addSwatch(`hsl(${h}, 70%, ${l}%)`);
+                });
+            });
+
+            function addSwatch(color) {
+                const div = document.createElement('div');
+                div.className = 'color-swatch';
+                div.style.backgroundColor = color;
+                div.onclick = () => { carColor = color; updatePreviews(); };
+                container.appendChild(div);
+            }
+        }
+
+        function selectCar(type) {
+            carType = type;
+            document.querySelectorAll('.car-card').forEach(el => el.classList.remove('active'));
+            document.getElementById('card-'+type).classList.add('active');
+            if(type === 'suv') { player.w = 96; player.h = 45; }
+            else if(type === 'sport') { player.w = 105; player.h = 32; }
+            else { player.w = 94; player.h = 38; }
+            updatePreviews();
+        }
+
+        function updatePreviews() {
+            ['hatch', 'sport', 'suv'].forEach(t => {
+                const c = document.getElementById('thumb-'+t);
+                const tx = c.getContext('2d');
+                tx.clearRect(0,0,c.width,c.height);
+                drawVehicle(tx, 30, 40, t, carColor, 0);
+            });
+            const p = document.getElementById('paintPreview');
+            const px = p.getContext('2d');
+            px.clearRect(0,0,p.width,p.height);
+            drawVehicle(px, 50, 60, carType, carColor, 0);
+        }
+
+        function draw() {
+            let sky = ctx.createLinearGradient(0,0,0,h);
+            sky.addColorStop(0, lerpColor('#020205', '#080812', rainLvl));
+            sky.addColorStop(1, lerpColor('#0a0a1a', '#1a1a25', rainLvl));
+            ctx.fillStyle = sky; ctx.fillRect(0,0,w,h);
+            if(lightning > 0) { ctx.fillStyle=`rgba(255,255,255,${lightning*0.3})`; ctx.fillRect(0,0,w,h); lightning -= 0.08; }
+            ctx.fillStyle = lerpColor('#0a0806', '#eef2ff', snowLvl);
+            ctx.fillRect(0, player.ground, w, h-player.ground);
+
+            if(!over && !paused) {
+                frame++; if(frame % 60 === 0) score++;
+                player.v += player.g; player.y += player.v;
+                if(player.y + player.h >= player.ground) { player.y = player.ground - player.h; player.v = 0; }
+                player.wheelA += speed * 0.12;
+                if(frame % 140 === 0) wrecks.push({ x: w + 100, type: ['hatch','sport','suv'][Math.floor(Math.random()*3)], w: 100, h: 40, burning: Math.random() > 0.5 });
+                
+                const mode = document.getElementById('weatherSelect').value;
+                if(mode === 'rain') { rainLvl = Math.min(1, rainLvl + 0.01); if(Math.random()<0.005) lightning=1; } else rainLvl = Math.max(0, rainLvl - 0.01);
+                if(mode === 'snow') snowLvl = Math.min(1, snowLvl + 0.01); else snowLvl = Math.max(0, snowLvl - 0.01);
+            }
+
+            wrecks.forEach((o, i) => {
+                if(!paused && !over) o.x -= speed;
+                drawVehicle(ctx, o.x, player.ground - (o.type==='suv'?45:o.type==='sport'?32:38), o.type, 0, 0.5, true);
+                if(o.burning && frame % 2 === 0 && !paused) flames.push({x: o.x + 30 + Math.random()*40, y: player.ground-20, vx: (Math.random()-0.5), vy: -(1+Math.random()*2), s: 5+Math.random()*10, o: 1, c: Math.random() > 0.5 ? '#f50' : '#555'});
+                if(player.x < o.x + o.w && player.x + player.w > o.x && player.y + player.h > player.ground - (o.type==='suv'?45:o.type==='sport'?32:38) + 10) die();
+                if(o.x < -200) wrecks.splice(i, 1);
+            });
+
+            flames.forEach((f, i) => {
+                f.x += f.vx; f.y += f.vy; f.o -= 0.015; ctx.globalAlpha = f.o; ctx.fillStyle = f.c;
+                ctx.beginPath(); ctx.arc(f.x, f.y, f.s, 0, Math.PI*2); ctx.fill();
+                if(f.o <= 0) flames.splice(i, 1);
+            });
+            ctx.globalAlpha = 1;
+            drawVehicle(ctx, player.x, player.y, carType, carColor, player.wheelA);
+            document.getElementById('scoreDisplay').innerText = score.toString().padStart(4, '0');
+            requestAnimationFrame(draw);
+        }
+
+        function lerpColor(a, b, t) {
+            const ah = parseInt(a.replace(/#/g, ''), 16), bh = parseInt(b.replace(/#/g, ''), 16),
+                  ar = ah >> 16, ag = ah >> 8 & 0xff, ab = ah & 0xff,
+                  rr = ar + t * (br - ar), rg = ag + t * (bg - ag), rb = ab + t * (bb - ab);
+            return '#' + ((1 << 24) + (rr << 16) + (rg << 8) + rb | 0).toString(16).slice(1);
+        }
+
+        function resize() {
+            w = stage.offsetWidth; h = stage.offsetHeight;
+            canvas.width = w * devicePixelRatio; canvas.height = h * devicePixelRatio;
+            ctx.scale(devicePixelRatio, devicePixelRatio);
+            player.ground = h * 0.78; player.y = player.ground - player.h;
+            updatePreviews();
+        }
+
+        function openSub(id) { document.querySelectorAll('.overlay-screen').forEach(s => s.classList.add('hidden')); document.getElementById(id).classList.remove('hidden'); }
+        function startGame() { score = 0; frame = 0; wrecks = []; flames = []; over = false; paused = false; openSub('none'); }
+        function die() { over = true; document.getElementById('finalScore').innerText = `DISTANCE: ${score}m`; openSub('crashScreen'); }
+        function togglePause() { if(over) return; paused = !paused; if(paused) { openSub('startScreen'); document.getElementById('continueBtn').classList.remove('hidden'); document.getElementById('startBtn').classList.add('hidden'); } else openSub('none'); }
+
+        ['touchstart', 'touchend'].forEach(evt => window.addEventListener(evt, (e) => {
+            const t = e.changedTouches[0]; const el = document.elementFromPoint(t.clientX, t.clientY);
+            if (el && el.id === 'jumpBtn' && evt === 'touchstart' && !over && !paused && player.y >= player.ground - player.h - 5) player.v = player.jump;
+            if (el && el.id === 'boostBtn') speed = (evt === 'touchstart') ? 16 : 7;
+        }));
+
+        window.addEventListener('resize', resize); 
+        createPalette(); resize(); draw();
+    </script>
+</body>
+</html>
