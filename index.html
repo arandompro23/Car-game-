@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <title>Night Drive Ultra: Masterpiece</title>
+    <style>
+        :root { --squircle: 28px; --glass: linear-gradient(145deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.03) 100%); }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; -webkit-user-select: none; user-select: none; font-family: "SF Pro Display", -apple-system, sans-serif; }
+        #game-container { width: 100vw; height: 100vh; position: relative; display: flex; align-items: center; justify-content: center; }
+        
+        @media screen and (orientation: portrait) { #stage { width: 100vh; height: 100vw; transform: rotate(90deg); transform-origin: center; } }
+        @media screen and (orientation: landscape) { #stage { width: 100vw; height: 100vh; } }
+        
+        #stage { position: relative; overflow: hidden; background: #020205; }
+        canvas { width: 100%; height: 100%; display: block; }
+        
+        #ui-top { position: absolute; top: 40px; left: 50px; right: 50px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 10; color: white; }
+        .stats { font-weight: 900; font-size: 28px; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+        
+        .overlay-screen { position: absolute; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; z-index: 100; opacity: 1; transition: opacity 0.4s; }
+        
+        .btn { background: var(--glass); border: 1px solid rgba(255,255,255,0.25); border-radius: var(--squircle); color: white; font-weight: 600; display: flex; align-items: center; justify-content: center; transition: all 0.2s cubic-bezier(0.15, 0, 0.15, 1); pointer-events: auto; backdrop-filter: blur(15px); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+        .btn:active { transform: scale(0.9) translateY(4px); background: rgba(255,255,255,0.3); }
+        
+        .pause-btn { width: 65px; height: 65px; font-size: 22px; border-radius: 20px; }
+        .menu-btn { width: 240px; height: 70px; margin: 15px; font-size: 20px; text-transform: uppercase; letter-spacing: 2px; }
+        
+        .control-btns { position: absolute; bottom: 8%; width: 100%; display: flex; justify-content: space-between; padding: 0 70px; box-sizing: border-box; pointer-events: none; }
+        .game-btn { width: 125px; height: 125px; border-radius: 40px; font-size: 16px; font-weight: 800; border-width: 2px; }
+        
+        input[type=range] { width: 220px; margin: 20px; height: 8px; border-radius: 5px; accent-color: #007AFF; }
+        #colorPreview { width: 120px; height: 45px; border-radius: 12px; border: 3px solid white; margin: 15px; box-shadow: 0 0 20px rgba(255,255,255,0.2); }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="stage">
+            <div id="ui-top"><div class="stats" id="scoreDisplay">0000</div><div class="btn pause-btn" id="pauseBtn" onclick="togglePause()">II</div></div>
+            
+            <div id="startScreen" class="overlay-screen">
+                <h1 id="menuTitle" style="font-size: 56px; margin-bottom: 30px; letter-spacing: -3px; font-weight: 900;">NIGHT DRIVE</h1>
+                <div id="continueBtn" class="btn menu-btn hidden" style="background: rgba(46, 204, 113, 0.3); border-color: #2ecc71;" onclick="togglePause()">CONTINUE</div>
+                <div id="startBtn" class="btn menu-btn" style="background: rgba(0, 122, 255, 0.3); border-color: #007AFF;" onclick="startGame()">START ENGINE</div>
+                <div class="btn menu-btn" onclick="openSub('customMenu')">PAINT SHOP</div>
+                <div class="btn menu-btn" onclick="openSub('settingsMenu')">SETTINGS</div>
+            </div>
+
+            <div id="customMenu" class="overlay-screen hidden">
+                <h2 style="letter-spacing: 4px;">PAINT SHOP</h2>
+                <div id="colorPreview"></div>
+                <input type="range" id="hueSlider" min="0" max="360" value="0" oninput="updateCarHue()">
+                <div class="btn menu-btn" onclick="openSub('startScreen')">DONE</div>
+            </div>
+
+            <div id="settingsMenu" class="overlay-screen hidden">
+                <h2 style="letter-spacing: 4px;">MECHANICS</h2>
+                <p>BASE VELOCITY</p>
+                <input type="range" id="speedRange" min="5" max="11" value="7">
+                <div class="btn menu-btn" onclick="openSub('startScreen')">SAVE</div>
+            </div>
+
+            <div id="crashScreen" class="overlay-screen hidden">
+                <h1 style="color: #ff3b30; font-size: 60px; margin:0; font-weight: 900;">CRASHED</h1>
+                <p id="finalScore" style="font-size: 24px; margin: 25px 0; opacity: 0.8;"></p>
+                <div class="btn menu-btn" style="background: rgba(0, 122, 255, 0.3);" onclick="startGame()">RETRY</div>
+                <div class="btn menu-btn" onclick="resetToMainMenu()">GARAGE</div>
+            </div>
+
+            <div class="control-btns">
+                <div class="btn game-btn" id="boostBtn">BOOST</div>
+                <div class="btn game-btn" id="jumpBtn">JUMP</div>
+            </div>
+            <canvas id="g"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('g'), ctx = canvas.getContext('2d');
+        let w, h, score = 0, best = localStorage.getItem('hb') || 0, over = true, paused = false, frame = 0;
+        let speed = 7, carHue = 200, rocks = [], stars = [], groundSpecks = [];
+        const car = { x: 280, y: 0, w: 94, h: 38, v: 0, g: 0.55, jump: -13.5, ground: 0, wheelA: 0 };
+
+        let audioCtx, musicNode, mainGain;
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            mainGain = audioCtx.createGain();
+            mainGain.gain.value = 0.4;
+            mainGain.connect(audioCtx.destination);
+            startMusic();
+        }
+
+        function startMusic() {
+            let beat = 0;
+            setInterval(() => {
+                if(over || paused || !audioCtx) return;
+                const osc = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                const notes = [55, 55, 65, 49]; 
+                osc.frequency.setValueAtTime(notes[beat % 4], audioCtx.currentTime);
+                osc.type = 'sawtooth';
+                g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+                osc.connect(g); g.connect(mainGain);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+                beat++;
+            }, 500);
+        }
+
+        function playSfx(f, t, d, v) {
+            if(!audioCtx || paused) return;
+            const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+            o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime);
+            g.gain.setValueAtTime(v, audioCtx.currentTime);
+            g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + d);
+            o.connect(g); g.connect(mainGain);
+            o.start(); o.stop(audioCtx.currentTime + d);
+        }
+
+        function initStars() {
+            stars = Array.from({length: 120}, () => ({ x: Math.random()*w, y: Math.random()*h*0.6, s: Math.random()*1.5, o: Math.random() }));
+        }
+
+        function initGround() {
+            groundSpecks = Array.from({length: 80}, () => ({ x: Math.random()*w, y: 0, s: Math.random()*3 }));
+        }
+
+        function drawMoon() {
+            const time = Date.now() / 60000;
+            const phase = (time % 1) * 2 - 1; 
+            ctx.save();
+            ctx.translate(w*0.8, h*0.15);
+            ctx.shadowBlur = 30; ctx.shadowColor = "rgba(255,255,255,0.3)";
+            ctx.fillStyle = "#fffde7";
+            ctx.beginPath(); ctx.arc(0,0,35,0,Math.PI*2); ctx.fill();
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.beginPath(); ctx.arc(phase * 40, 0, 35, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+        }
+
+        function updateCarHue() {
+            carHue = document.getElementById('hueSlider').value;
+            document.getElementById('colorPreview').style.backgroundColor = `hsl(${carHue}, 80%, 50%)`;
+        }
+
+        function resize() {
+            const stage = document.getElementById('stage');
+            w = stage.offsetWidth; h = stage.offsetHeight;
+            canvas.width = w * devicePixelRatio; canvas.height = h * devicePixelRatio;
+            ctx.scale(devicePixelRatio, devicePixelRatio);
+            car.ground = h * 0.78; car.y = car.ground - car.h;
+            initStars(); initGround();
+        }
+
+        function openSub(id) {
+            document.querySelectorAll('.overlay-screen').forEach(s => s.classList.add('hidden'));
+            const el = document.getElementById(id);
+            if(el) el.classList.remove('hidden');
+        }
+
+        function resetToMainMenu() {
+            document.getElementById('menuTitle').innerText = "NIGHT DRIVE";
+            document.getElementById('continueBtn').classList.add('hidden');
+            document.getElementById('startBtn').classList.remove('hidden');
+            paused = false;
+            openSub('startScreen');
+        }
+
+        function togglePause() {
+            if(over) return;
+            paused = !paused;
+            if(paused) {
+                document.getElementById('menuTitle').innerText = "PAUSED";
+                document.getElementById('continueBtn').classList.remove('hidden');
+                document.getElementById('startBtn').classList.add('hidden');
+                openSub('startScreen');
+            } else { document.getElementById('startScreen').classList.add('hidden'); }
+        }
+
+        function startGame() {
+            initAudio(); if(audioCtx.state === 'suspended') audioCtx.resume();
+            speed = parseInt(document.getElementById('speedRange').value);
+            score = 0; frame = 0; rocks = []; over = false; paused = false;
+            document.getElementById('continueBtn').classList.add('hidden');
+            document.getElementById('startBtn').classList.remove('hidden');
+            openSub('none');
+        }
+
+        function drawCar() {
+            ctx.save(); ctx.translate(car.x, car.y);
+            ctx.fillStyle = "rgba(0,0,0,0.4)";
+            ctx.beginPath(); ctx.ellipse(car.w/2, car.h+5, 40, 5, 0, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = `hsl(${carHue}, 85%, 45%)`;
+            ctx.beginPath(); ctx.roundRect(0, 8, car.w, 24, 10); ctx.fill();
+            let grad = ctx.createLinearGradient(0,0,0,15);
+            grad.addColorStop(0, "#222"); grad.addColorStop(1, "#050505");
+            ctx.fillStyle = grad; ctx.beginPath(); ctx.roundRect(22, 0, 50, 18, [15, 15, 2, 2]); ctx.fill();
+            ctx.fillStyle = "rgba(100,200,255,0.3)"; ctx.fillRect(30, 4, 35, 10);
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.fillRect(car.w-4, 14, 4, 12);
+            ctx.fillStyle = '#f33'; ctx.shadowColor = '#f33'; ctx.fillRect(0, 14, 4, 12);
+            ctx.shadowBlur = 0;
+            const dw = (x) => {
+                ctx.save(); ctx.translate(x, car.h-4); ctx.rotate(car.wheelA);
+                ctx.fillStyle = '#080808'; ctx.beginPath(); ctx.arc(0,0,15,0,Math.PI*2); ctx.fill();
+                ctx.strokeStyle = '#444'; ctx.lineWidth = 3;
+                for(let i=0; i<5; i++){ ctx.rotate(Math.PI*2/5); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(12,0); ctx.stroke(); }
+                ctx.restore();
+            };
+            dw(22); dw(car.w-22);
+            ctx.restore();
+        }
+
+        function update() {
+            if (over || paused) return;
+            frame++; if(frame % 60 === 0) score++;
+            car.v += car.g; car.y += car.v;
+            if (car.y + car.h >= car.ground) { car.y = car.ground - car.h; car.v = 0; }
+            car.wheelA += speed * 0.12;
+            if (frame % 150 === 0) {
+                const rockW = 60 + Math.random()*40;
+                rocks.push({x: w, w: rockW, h: 40 + Math.random()*30});
+            }
+            rocks.forEach((o, i) => {
+                o.x -= speed;
+                if (car.x + 15 < o.x + o.w && car.x + car.w - 15 > o.x && car.y + car.h > car.ground - o.h + 8) die();
+                if (o.x + o.w < -100) rocks.splice(i, 1);
+            });
+            document.getElementById('scoreDisplay').innerText = score.toString().padStart(4, '0');
+        }
+
+        function draw() {
+            let sky = ctx.createLinearGradient(0, 0, 0, h);
+            sky.addColorStop(0, '#020205'); sky.addColorStop(1, '#0a0a1a');
+            ctx.fillStyle = sky; ctx.fillRect(0,0,w,h);
+            ctx.fillStyle = "#fff";
+            stars.forEach(s => {
+                ctx.globalAlpha = 0.3 + Math.abs(Math.sin(frame/20 + s.o*10)*0.7);
+                ctx.fillRect(s.x, s.y, s.s, s.s);
+            });
+            ctx.globalAlpha = 1;
+            drawMoon();
+            ctx.fillStyle = "#0a0806"; ctx.fillRect(0, car.ground, w, h-car.ground);
+            ctx.fillStyle = "rgba(255,255,255,0.05)";
+            groundSpecks.forEach(s => {
+                s.x = (s.x - speed) % w; if(s.x < 0) s.x = w;
+                ctx.fillRect(s.x, car.ground + (s.y++ % (h-car.ground)), s.s, 1);
+            });
+            rocks.forEach(o => {
+                ctx.fillStyle = '#222'; ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(o.x, car.ground);
+                ctx.lineTo(o.x + o.w*0.2, car.ground - o.h*0.7);
+                ctx.lineTo(o.x + o.w*0.5, car.ground - o.h);
+                ctx.lineTo(o.x + o.w*0.8, car.ground - o.h*0.6);
+                ctx.lineTo(o.x + o.w, car.ground);
+                ctx.fill(); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(o.x + o.w*0.5, car.ground-o.h); ctx.lineTo(o.x+o.w*0.4, car.ground - o.h*0.4); ctx.stroke();
+            });
+            drawCar(); update(); requestAnimationFrame(draw);
+        }
+
+        function die() {
+            over = true; playSfx(50, 'square', 0.5, 0.3);
+            if(score > best) { best = score; localStorage.setItem('hb', best); }
+            document.getElementById('finalScore').innerText = `DISTANCE: ${score}m | RECORD: ${best}m`;
+            openSub('crashScreen');
+        }
+
+        const handle = (id, type) => {
+            if (id === 'jumpBtn' && type === 'start' && !over && !paused) {
+                if (car.y >= car.ground - car.h - 5) {
+                    car.v = car.jump; playSfx(300, 'triangle', 0.15, 0.1);
+                }
+            }
+            if (id === 'boostBtn') {
+                const bVal = parseInt(document.getElementById('speedRange').value);
+                speed = type === 'start' ? bVal * 2.2 : bVal;
+                if(type === 'start') playSfx(100, 'sawtooth', 0.1, 0.1);
+            }
+        };
+
+        ['touchstart', 'touchend'].forEach(evt => {
+            window.addEventListener(evt, (e) => {
+                const t = e.changedTouches[0];
+                const el = document.elementFromPoint(t.clientX, t.clientY);
+                if (el && el.id) handle(el.id, evt === 'touchstart' ? 'start' : 'end');
+            }, {passive: false});
+        });
+
+        window.addEventListener('resize', () => setTimeout(resize, 200));
+        updateCarHue(); resize(); draw();
+    </script>
+</body>
+</html>
