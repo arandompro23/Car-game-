@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <title>Night Drive Ultra: Highway Wrecks</title>
+    <style>
+        :root { --squircle: 28px; --glass: linear-gradient(145deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.03) 100%); }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; -webkit-user-select: none; user-select: none; font-family: "SF Pro Display", -apple-system, sans-serif; }
+        #game-container { width: 100vw; height: 100vh; position: relative; display: flex; align-items: center; justify-content: center; }
+        @media screen and (orientation: portrait) { #stage { width: 100vh; height: 100vw; transform: rotate(90deg); transform-origin: center; } }
+        @media screen and (orientation: landscape) { #stage { width: 100vw; height: 100vh; } }
+        #stage { position: relative; overflow: hidden; background: #020205; }
+        canvas { width: 100%; height: 100%; display: block; }
+        #ui-top { position: absolute; top: 40px; left: 50px; right: 50px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 10; color: white; }
+        .stats { font-weight: 900; font-size: 28px; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+        .overlay-screen { position: absolute; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; z-index: 100; transition: opacity 0.4s; }
+        .btn { background: var(--glass); border: 1px solid rgba(255,255,255,0.25); border-radius: var(--squircle); color: white; font-weight: 600; display: flex; align-items: center; justify-content: center; transition: all 0.2s cubic-bezier(0.15, 0, 0.15, 1); pointer-events: auto; backdrop-filter: blur(15px); text-align: center; }
+        .btn:active { transform: scale(0.9) translateY(4px); }
+        .menu-btn { width: 240px; height: 60px; margin: 10px; font-size: 16px; text-transform: uppercase; letter-spacing: 2px; }
+        .car-option { width: 180px; height: 140px; margin: 10px; border-radius: 20px; display: flex; flex-direction: column; padding: 10px; border: 2px solid transparent; background: rgba(255,255,255,0.05); }
+        .car-option.selected { border-color: #007aff; background: rgba(0, 122, 255, 0.2); }
+        .car-grid { display: flex; flex-direction: row; margin-bottom: 20px; }
+        .car-preview { height: 60px; width: 100%; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+        .control-btns { position: absolute; bottom: 8%; width: 100%; display: flex; justify-content: space-between; padding: 0 70px; box-sizing: border-box; pointer-events: none; }
+        .game-btn { width: 125px; height: 125px; border-radius: 40px; font-size: 16px; font-weight: 800; border-width: 2px; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="stage">
+            <div id="ui-top"><div class="stats" id="scoreDisplay">0000</div><div class="btn" style="width:60px; height:60px; border-radius:20px;" onclick="togglePause()">II</div></div>
+            
+            <div id="startScreen" class="overlay-screen">
+                <h1 style="font-size: 50px; margin-bottom: 30px; font-weight: 900;">NIGHT DRIVE</h1>
+                <div id="continueBtn" class="btn menu-btn hidden" onclick="togglePause()">CONTINUE</div>
+                <div id="startBtn" class="btn menu-btn" style="background:rgba(0,122,255,0.4)" onclick="startGame()">START ENGINE</div>
+                <div class="btn menu-btn" onclick="openSub('garageMenu')">THE GARAGE</div>
+                <div class="btn menu-btn" onclick="openSub('settingsMenu')">SETTINGS</div>
+            </div>
+
+            <div id="garageMenu" class="overlay-screen hidden">
+                <h2 style="margin-bottom:30px">SELECT YOUR RIDE</h2>
+                <div class="car-grid">
+                    <div class="car-option selected" id="opt-sport" onclick="setCar('sport')">
+                        <div class="car-preview" id="prev-sport"></div>
+                        <span>SPORT</span>
+                    </div>
+                    <div class="car-option" id="opt-suv" onclick="setCar('suv')">
+                        <div class="car-preview" id="prev-suv"></div>
+                        <span>SUV</span>
+                    </div>
+                    <div class="car-option" id="opt-hatch" onclick="setCar('hatch')">
+                        <div class="car-preview" id="prev-hatch"></div>
+                        <span>HATCHBACK</span>
+                    </div>
+                </div>
+                <div class="btn menu-btn" onclick="openSub('startScreen')">CONFIRM</div>
+            </div>
+
+            <div id="settingsMenu" class="overlay-screen hidden">
+                <h2>SETTINGS</h2>
+                <p>WEATHER SYSTEM</p>
+                <select id="weatherSelect" style="width:200px; padding:10px; background:#222; color:white; border-radius:10px;">
+                    <option value="dynamic">DYNAMIC</option>
+                    <option value="clear">CLEAR</option>
+                    <option value="rain">RAIN</option>
+                    <option value="snow">SNOW</option>
+                </select>
+                <div class="btn menu-btn" style="margin-top:40px" onclick="openSub('startScreen')">SAVE</div>
+            </div>
+
+            <div id="crashScreen" class="overlay-screen hidden">
+                <h1 style="color: #ff3b30; font-size: 60px; font-weight: 900;">CRASHED</h1>
+                <p id="finalScore" style="font-size: 24px; margin: 20px 0;"></p>
+                <div class="btn menu-btn" style="background: rgba(0, 122, 255, 0.3);" onclick="startGame()">RETRY</div>
+                <div class="btn menu-btn" onclick="openSub('startScreen')">GARAGE</div>
+            </div>
+
+            <div class="control-btns">
+                <div class="btn game-btn" id="boostBtn">BOOST</div>
+                <div class="btn game-btn" id="jumpBtn">JUMP</div>
+            </div>
+            <canvas id="g"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('g'), ctx = canvas.getContext('2d');
+        let w, h, score = 0, best = localStorage.getItem('hb') || 0, over = true, paused = false, frame = 0;
+        let speed = 7, carHue = 200, carType = 'sport', wrecks = [], stars = [], groundSpecks = [], particles = [], flames = [];
+        
+        let weatherTarget = 'clear', snowLvl = 0, rainLvl = 0;
+        let lightning = 0, thunderQueued = 0;
+
+        const player = { x: 280, y: 0, w: 94, h: 38, v: 0, g: 0.55, jump: -13.5, ground: 0, wheelA: 0 };
+
+        function setCar(type) {
+            carType = type;
+            document.querySelectorAll('.car-option').forEach(el => el.classList.remove('selected'));
+            document.getElementById('opt-'+type).classList.add('selected');
+            // Adjust player hitbox based on car type
+            if(type === 'suv') { player.w = 90; player.h = 48; }
+            else if(type === 'hatch') { player.w = 84; player.h = 40; }
+            else { player.w = 94; player.h = 36; }
+        }
+
+        function drawCarBody(cCtx, type, x, y, hue, isWreck = false) {
+            cCtx.save(); cCtx.translate(x, y);
+            cCtx.fillStyle = isWreck ? "#333" : `hsl(${hue}, 85%, 45%)`;
+            
+            if(type === 'sport') {
+                cCtx.beginPath(); cCtx.roundRect(0, 10, 94, 24, 8); cCtx.fill();
+                cCtx.fillStyle = isWreck ? "#111" : "#111";
+                cCtx.beginPath(); cCtx.roundRect(25, 2, 45, 15, [15, 15, 2, 2]); cCtx.fill();
+            } else if (type === 'suv') {
+                cCtx.beginPath(); cCtx.roundRect(0, 5, 90, 35, 5); cCtx.fill();
+                cCtx.beginPath(); cCtx.roundRect(10, -10, 55, 25, 8); cCtx.fill();
+            } else {
+                cCtx.beginPath(); cCtx.roundRect(0, 8, 85, 30, 12); cCtx.fill();
+                cCtx.beginPath(); cCtx.roundRect(15, -2, 40, 20, [15, 15, 5, 5]); cCtx.fill();
+            }
+            
+            if(!isWreck) {
+                cCtx.shadowBlur = 15; cCtx.fillStyle = '#fff'; cCtx.shadowColor = '#fff'; cCtx.fillRect(player.w-4, 15, 4, 10);
+                cCtx.fillStyle = '#f33'; cCtx.shadowColor = '#f33'; cCtx.fillRect(0, 15, 4, 10);
+            }
+            cCtx.restore();
+        }
+
+        function drawWrecks() {
+            wrecks.forEach((o, idx) => {
+                o.x -= speed;
+                drawCarBody(ctx, o.type, o.x, player.ground - o.h, 0, true);
+                
+                // Add fire to some wrecks
+                if(o.burning) {
+                    if(frame % 3 === 0) flames.push({x: o.x + 20 + Math.random()*40, y: player.ground - 20, r: 5 + Math.random()*10, v: 1+Math.random()*2, o: 1});
+                }
+
+                // Collision
+                if (player.x + 10 < o.x + o.w && player.x + player.w - 10 > o.x && player.y + player.h > player.ground - o.h + 10) die();
+                if (o.x < -200) wrecks.splice(idx, 1);
+            });
+        }
+
+        function drawFlames() {
+            flames.forEach((f, i) => {
+                f.y -= f.v; f.o -= 0.02;
+                ctx.fillStyle = `rgba(${255}, ${100 + Math.random()*100}, 0, ${f.o})`;
+                ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
+                if(f.o <= 0) flames.splice(i, 1);
+            });
+        }
+
+        // Environment & Core Logic
+        function updateWeather() {
+            const mode = document.getElementById('weatherSelect').value;
+            if (mode === 'snow') snowLvl = Math.min(1, snowLvl + 0.005); else snowLvl = Math.max(0, snowLvl - 0.005);
+            if (mode === 'rain') rainLvl = Math.min(1, rainLvl + 0.005); else rainLvl = Math.max(0, rainLvl - 0.005);
+            if (rainLvl > 0.8 && Math.random() < 0.005) lightning = 1;
+            if (lightning > 0) lightning -= 0.1;
+        }
+
+        function drawEnvironment() {
+            let sky = ctx.createLinearGradient(0, 0, 0, h);
+            sky.addColorStop(0, lerpColor('#020205', '#080812', rainLvl));
+            sky.addColorStop(1, lerpColor('#0a0a1a', '#1a1a25', rainLvl));
+            ctx.fillStyle = sky; ctx.fillRect(0,0,w,h);
+            if (lightning > 0) { ctx.fillStyle = `rgba(255,255,255,${lightning * 0.3})`; ctx.fillRect(0,0,w,h); }
+            ctx.fillStyle = lerpColor('#0a0806', '#eef2ff', snowLvl);
+            ctx.fillRect(0, player.ground, w, h-player.ground);
+        }
+
+        function lerpColor(a, b, t) {
+            const ah = parseInt(a.replace(/#/g, ''), 16), bh = parseInt(b.replace(/#/g, ''), 16),
+                  ar = ah >> 16, ag = ah >> 8 & 0xff, ab = ah & 0xff,
+                  br = bh >> 16, bg = bh >> 8 & 0xff, bb = bh & 0xff,
+                  rr = ar + t * (br - ar), rg = ag + t * (bg - ag), rb = ab + t * (bb - ab);
+            return '#' + ((1 << 24) + (rr << 16) + (rg << 8) + rb | 0).toString(16).slice(1);
+        }
+
+        function resize() {
+            const stage = document.getElementById('stage');
+            w = stage.offsetWidth; h = stage.offsetHeight;
+            canvas.width = w * devicePixelRatio; canvas.height = h * devicePixelRatio;
+            ctx.scale(devicePixelRatio, devicePixelRatio);
+            player.ground = h * 0.78; player.y = player.ground - player.h;
+            renderPreviews();
+        }
+
+        function renderPreviews() {
+            ['sport', 'suv', 'hatch'].forEach(type => {
+                const el = document.getElementById('prev-' + type);
+                el.innerHTML = `<canvas id="c-${type}" width="100" height="50"></canvas>`;
+                const c = document.getElementById('c-' + type);
+                const pCtx = c.getContext('2d');
+                drawCarBody(pCtx, type, 5, 15, 200, false);
+            });
+        }
+
+        function openSub(id) { document.querySelectorAll('.overlay-screen').forEach(s => s.classList.add('hidden')); document.getElementById(id).classList.remove('hidden'); }
+        
+        function startGame() {
+            score = 0; frame = 0; wrecks = []; flames = []; over = false; paused = false;
+            speed = 7; openSub('none');
+        }
+
+        function togglePause() {
+            if(over) return;
+            paused = !paused;
+            if(paused) { openSub('startScreen'); document.getElementById('continueBtn').classList.remove('hidden'); document.getElementById('startBtn').classList.add('hidden'); }
+            else openSub('none');
+        }
+
+        function die() {
+            over = true;
+            document.getElementById('finalScore').innerText = `DISTANCE: ${score}m`;
+            openSub('crashScreen');
+        }
+
+        function draw() {
+            drawEnvironment();
+            if(!over && !paused) {
+                frame++; if(frame % 60 === 0) score++;
+                player.v += player.g; player.y += player.v;
+                if (player.y + player.h >= player.ground) { player.y = player.ground - player.h; player.v = 0; }
+                if (frame % 120 === 0) {
+                    const types = ['sport', 'suv', 'hatch'];
+                    wrecks.push({x: w, w: 90, h: 40, type: types[Math.floor(Math.random()*3)], burning: Math.random() > 0.6});
+                }
+                updateWeather();
+            }
+            drawFlames();
+            drawWrecks();
+            drawCarBody(ctx, carType, player.x, player.y, carHue);
+            document.getElementById('scoreDisplay').innerText = score.toString().padStart(4, '0');
+            requestAnimationFrame(draw);
+        }
+
+        // Controls
+        const handle = (id, type) => {
+            if (id === 'jumpBtn' && type === 'start' && !over && !paused && player.y >= player.ground - player.h - 5) player.v = player.jump;
+            if (id === 'boostBtn') speed = (type === 'start') ? 15 : 7;
+        };
+
+        ['touchstart', 'touchend'].forEach(evt => {
+            window.addEventListener(evt, (e) => {
+                const t = e.changedTouches[0];
+                const el = document.elementFromPoint(t.clientX, t.clientY);
+                if (el && el.id) handle(el.id, evt === 'touchstart' ? 'start' : 'end');
+            });
+        });
+
+        window.addEventListener('resize', resize);
+        resize(); setCar('sport'); draw();
+    </script>
+</body>
+</html>
